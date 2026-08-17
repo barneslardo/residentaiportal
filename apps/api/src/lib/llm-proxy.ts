@@ -172,56 +172,69 @@ async function runAnthropicLoop(opts: {
   return "I hit the tool-call limit on that one. Try asking for a smaller piece of it.";
 }
 
-export function listAvailableChatModels() {
-  const models: Array<{ id: string; label: string; provider: string }> = [];
-  if (config.llm.grokKey) {
-    models.push(
-      { id: "grok-4.3", label: "Grok 4.3 (xAI)", provider: "grok" },
-      { id: "grok-4.3-fast", label: "Grok 4.3 Fast (xAI)", provider: "grok" }
-    );
-  }
-  if (config.llm.openaiKey) {
-    models.push(
-      { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
-      { id: "gpt-4o-mini", label: "GPT-4o mini", provider: "openai" }
-    );
-  }
-  if (config.llm.anthropicKey) {
-    models.push({ id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" });
-  }
-  return models;
+type ModelEntry = { id: string; label: string; provider: "grok" | "openai" | "anthropic" };
+
+const MODEL_CATALOG: ModelEntry[] = [
+  { id: "grok-4.3", label: "Grok 4.3 (xAI)", provider: "grok" },
+  { id: "grok-4.3-fast", label: "Grok 4.3 Fast (xAI)", provider: "grok" },
+  { id: "gpt-4o", label: "GPT-4o", provider: "openai" },
+  { id: "gpt-4o-mini", label: "GPT-4o mini", provider: "openai" },
+  { id: "claude-sonnet-4-20250514", label: "Claude Sonnet 4", provider: "anthropic" },
+];
+
+function keyFor(provider: ModelEntry["provider"]): string {
+  if (provider === "grok") return config.llm.grokKey;
+  if (provider === "openai") return config.llm.openaiKey;
+  return config.llm.anthropicKey;
 }
 
-function defaultProvider(): string {
-  if (config.llm.grokKey) return "grok";
-  if (config.llm.openaiKey) return "openai";
-  if (config.llm.anthropicKey) return "anthropic";
-  return "none";
+export function isModelLocked(): boolean {
+  return Boolean(config.llm.lockedModel);
 }
 
-function defaultModelFor(provider: string): string {
-  if (provider === "grok") return config.llm.defaultModel || "grok-4.3";
-  if (provider === "openai") return "gpt-4o";
-  return "claude-sonnet-4-20250514";
+/**
+ * Models this deployment will actually run.
+ *
+ * When CHAT_LOCKED_MODEL is set this is a single entry — and because
+ * runChatCompletion resolves against the same list, an unavailable model cannot
+ * be reached by asking for it directly.
+ */
+export function listAvailableChatModels(): ModelEntry[] {
+  const usable = MODEL_CATALOG.filter((m) => keyFor(m.provider));
+  if (!config.llm.lockedModel) return usable;
+  return usable.filter((m) => m.id === config.llm.lockedModel);
 }
 
 export async function runChatCompletion(opts: {
   systemPrompt: string;
   messages: ChatMessage[];
   model?: string;
-  provider?: string;
   tools: readonly ToolDef[];
   runTool: RunToolFn;
 }): Promise<{ content: string; provider: string; model: string; toolTrace: ToolTrace[] }> {
-  const known = listAvailableChatModels();
-  const provider =
-    opts.provider && known.some((m) => m.provider === opts.provider)
-      ? opts.provider
-      : known.find((m) => m.id === opts.model)?.provider || defaultProvider();
-  if (provider === "none") {
-    throw new Error("No LLM provider configured — set GROK_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY");
+  const allowed = listAvailableChatModels();
+  if (!allowed.length) {
+    throw new Error(
+      config.llm.lockedModel
+        ? `The assistant is pinned to ${config.llm.lockedModel}, but that provider's API key is not configured.`
+        : "No LLM provider configured — set GROK_API_KEY, OPENAI_API_KEY, or ANTHROPIC_API_KEY"
+    );
   }
-  const model = opts.model || defaultModelFor(provider);
+
+  // Resolve strictly against the allowed list. A requested model that isn't on
+  // it is ignored rather than honoured — this is the enforcement point, and it
+  // sits behind the HTTP layer so no caller can route around it.
+  const requested = allowed.find((m) => m.id === opts.model);
+  const chosen = requested ?? allowed[0];
+  if (opts.model && !requested) {
+    console.warn(
+      `[chat] ignoring requested model "${opts.model}" — this deployment allows ${allowed
+        .map((m) => m.id)
+        .join(", ")}`
+    );
+  }
+  const provider = chosen.provider;
+  const model = chosen.id;
   const trace: ToolTrace[] = [];
 
   let content: string;

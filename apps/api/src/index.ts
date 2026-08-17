@@ -18,7 +18,7 @@ import { authRouter } from "./routes/auth.js";
 import { chatRouter } from "./routes/chat.js";
 import { portalRouter } from "./routes/portal.js";
 import { getMcpPublicInfo, mountMcpRoutes } from "./mcp/routes.js";
-import { listAvailableChatModels } from "./lib/llm-proxy.js";
+import { isModelLocked, listAvailableChatModels } from "./lib/llm-proxy.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -74,6 +74,7 @@ app.get("/health", (_req, res) => {
     oauth: config.oauth.enabled,
     agentDelegation: { enabled: config.agent.enabled, reason: agentDisabledReason() },
     llm: listAvailableChatModels().map((m) => m.id),
+    llmLocked: isModelLocked(),
     mcp: getMcpPublicInfo(),
   });
 });

@@ -10,7 +10,7 @@ import { agentDisabledReason, config } from "../config.js";
 import { AppError } from "../lib/errors.js";
 import { getDelegatedAccessToken, isAgentExchangeEnabled } from "../lib/agent-token-exchange.js";
 import { ensureFreshIdToken } from "../lib/session-id-token.js";
-import { listAvailableChatModels, runChatCompletion } from "../lib/llm-proxy.js";
+import { isModelLocked, listAvailableChatModels, runChatCompletion } from "../lib/llm-proxy.js";
 import { blockedToolsForScopes, runTool, toolsForScopes } from "../tools/registry.js";
 import type { MunicipalContext } from "../lib/context.js";
 import { requireSession } from "../middleware/auth.js";
@@ -85,7 +85,7 @@ chatRouter.post("/", requireSession, async (req, res, next) => {
     }
 
     const user = req.user!;
-    const { messages = [], model, provider } = req.body ?? {};
+    const { messages = [], model } = req.body ?? {};
 
     const idToken = await ensureFreshIdToken(req);
     const entitled = resolveSessionEntitledScopes(user.groups ?? [], user.scopes ?? []);
@@ -156,7 +156,6 @@ chatRouter.post("/", requireSession, async (req, res, next) => {
       ),
       messages,
       model,
-      provider,
       tools: allowed,
       runTool: async (name, input) => {
         const outcome = await runTool(name, input, ctx);
@@ -178,6 +177,7 @@ chatRouter.post("/", requireSession, async (req, res, next) => {
         content: result.content,
         provider: result.provider,
         model: result.model,
+        modelLocked: isModelLocked(),
         toolTrace: result.toolTrace,
         delegation: {
           mode: "id-jag",

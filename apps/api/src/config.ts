@@ -127,6 +127,14 @@ export const config = {
     openaiKey: optional("OPENAI_API_KEY"),
     anthropicKey: optional("ANTHROPIC_API_KEY"),
     defaultModel: optional("CHAT_DEFAULT_MODEL", "grok-4.3"),
+    /**
+     * Pin the assistant to exactly one model. Enforced server-side: the model
+     * list collapses to this entry and any model/provider on the request is
+     * ignored, so a crafted request cannot reach a different vendor even if
+     * another provider's key happens to be present in the environment.
+     * Set to an empty string to allow every configured model.
+     */
+    lockedModel: optional("CHAT_LOCKED_MODEL", "grok-4.3").trim(),
   },
 };
 
