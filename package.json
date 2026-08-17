@@ -1,0 +1,31 @@
+{
+  "name": "resident-portal",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm --parallel --filter @resident/api --filter @resident/web dev",
+    "dev:api": "pnpm --filter @resident/api dev",
+    "dev:web": "pnpm --filter @resident/web dev",
+    "build": "pnpm --filter @resident/shared build && pnpm --filter @resident/api build && pnpm --filter @resident/web build && pnpm --filter @resident/mcp-server build",
+    "start": "bash scripts/start.sh",
+    "stop": "bash scripts/stop.sh",
+    "restart": "pnpm stop && pnpm start",
+    "ensure-up": "bash scripts/ensure-up.sh",
+    "install-boot-service": "bash scripts/install-boot-service.sh",
+    "logs": "pnpm exec pm2 logs resident-api",
+    "status": "pnpm exec pm2 status",
+    "db:generate": "pnpm --filter @resident/api db:generate",
+    "db:push": "pnpm --filter @resident/api db:push",
+    "db:seed": "pnpm --filter @resident/api db:seed",
+    "keys": "node scripts/gen-keys.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": ["@prisma/client", "@prisma/engines", "prisma", "esbuild"]
+  },
+  "devDependencies": {
+    "jose": "^5.9.6",
+    "pm2": "^5.4.3"
+  }
+}

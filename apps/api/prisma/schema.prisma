@@ -1,0 +1,386 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id          String    @id @default(uuid())
+  email       String    @unique
+  oktaId      String?   @unique
+  displayName String
+  role        String    @default("resident")
+  personaId   String?
+  groups      String[]  @default([])
+  scopes      String[]  @default([])
+  residentId  String?   @unique
+  resident    Resident? @relation(fields: [residentId], references: [id])
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([role])
+}
+
+model Resident {
+  id            String   @id @default(uuid())
+  accountNumber String   @unique
+  firstName     String
+  lastName      String
+  email         String   @unique
+  phone         String   @default("")
+
+  serviceAddress String
+  serviceCity    String  @default("Riverbend")
+  serviceState   String  @default("MN")
+  serviceZip     String  @default("55044")
+
+  mailingAddress String  @default("")
+  mailingCity    String  @default("")
+  mailingState   String  @default("")
+  mailingZip     String  @default("")
+
+  parcelId      String?
+  ward          Int      @default(1)
+  householdSize Int      @default(1)
+  moveInDate    DateTime?
+
+  alertEmail  Boolean  @default(true)
+  alertSms    Boolean  @default(false)
+  alertTopics String[] @default([])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  user            User?
+  utilityAccounts UtilityAccount[]
+  taxBills        TaxBill[]
+  permits         Permit[]
+  serviceRequests ServiceRequest[]
+  citations       Citation[]
+  registrations   ProgramRegistration[]
+  assistanceCases AssistanceCase[]
+  codeCases       CodeCase[]
+  payments        Payment[]
+
+  @@index([lastName])
+  @@index([serviceZip])
+}
+
+model UtilityAccount {
+  id             String   @id @default(uuid())
+  accountNumber  String   @unique
+  residentId     String
+  resident       Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  serviceAddress String
+  services       String[] @default([])
+  status         String   @default("active")
+  autopayEnabled Boolean  @default(false)
+  meterId        String?
+  openedAt       DateTime @default(now())
+
+  statements UtilityStatement[]
+
+  @@index([residentId])
+}
+
+model UtilityStatement {
+  id               String   @id @default(uuid())
+  statementNumber  String   @unique
+  utilityAccountId String
+  utilityAccount   UtilityAccount @relation(fields: [utilityAccountId], references: [id], onDelete: Cascade)
+  periodStart      DateTime
+  periodEnd        DateTime
+  dueDate          DateTime
+  waterGallons     Int      @default(0)
+  waterCents       Int      @default(0)
+  sewerCents       Int      @default(0)
+  trashCents       Int      @default(0)
+  stormwaterCents  Int      @default(0)
+  lateFeeCents     Int      @default(0)
+  adjustmentCents  Int      @default(0)
+  amountCents      Int
+  paidCents        Int      @default(0)
+  status           String   @default("due")
+  paidAt           DateTime?
+  createdAt        DateTime @default(now())
+
+  @@index([utilityAccountId])
+  @@index([status])
+}
+
+model TaxBill {
+  id                String   @id @default(uuid())
+  billNumber        String   @unique
+  residentId        String
+  resident          Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  parcelId          String
+  taxYear           Int
+  assessedValueCents Int
+  amountCents       Int
+  paidCents         Int      @default(0)
+  dueDate           DateTime
+  status            String   @default("due")
+  exemptions        String[] @default([])
+  createdAt         DateTime @default(now())
+
+  @@index([residentId])
+  @@index([parcelId])
+}
+
+model Permit {
+  id                  String   @id @default(uuid())
+  permitNumber        String   @unique
+  residentId          String
+  resident            Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  type                String
+  status              String   @default("submitted")
+  address             String
+  description         String
+  contractorName      String?
+  estimatedValueCents Int      @default(0)
+  feeCents            Int      @default(0)
+  feePaid             Boolean  @default(false)
+  submittedAt         DateTime @default(now())
+  decidedAt           DateTime?
+  decidedBy           String?
+  decisionNote        String?
+  conditions          String?
+  issuedAt            DateTime?
+  expiresAt           DateTime?
+
+  inspections Inspection[]
+
+  @@index([residentId])
+  @@index([status])
+}
+
+model Inspection {
+  id             String   @id @default(uuid())
+  permitId       String
+  permit         Permit   @relation(fields: [permitId], references: [id], onDelete: Cascade)
+  type           String
+  scheduledFor   DateTime
+  status         String   @default("scheduled")
+  inspectorName  String?
+  /// Staff-only narrative — requires resident.permits.review or resident.code.enforcement.
+  inspectorNotes String?
+  completedAt    DateTime?
+  createdAt      DateTime @default(now())
+
+  @@index([permitId])
+}
+
+model ServiceRequest {
+  id            String    @id @default(uuid())
+  requestNumber String    @unique
+  residentId    String?
+  resident      Resident? @relation(fields: [residentId], references: [id], onDelete: SetNull)
+  reportedBy    String    @default("")
+  category      String
+  description   String
+  address       String
+  crossStreet   String?
+  lat           Float?
+  lng           Float?
+  status        String    @default("open")
+  priority      String    @default("normal")
+  assignedCrew  String?
+  contactPhone  String?
+  openedAt      DateTime  @default(now())
+  dueBy         DateTime?
+  closedAt      DateTime?
+  closureNote   String?
+
+  updates ServiceRequestUpdate[]
+
+  @@index([residentId])
+  @@index([status])
+  @@index([category])
+}
+
+model ServiceRequestUpdate {
+  id               String         @id @default(uuid())
+  serviceRequestId String
+  serviceRequest   ServiceRequest @relation(fields: [serviceRequestId], references: [id], onDelete: Cascade)
+  note             String
+  author           String
+  statusFrom       String?
+  statusTo         String?
+  createdAt        DateTime       @default(now())
+
+  @@index([serviceRequestId])
+}
+
+model Citation {
+  id              String    @id @default(uuid())
+  citationNumber  String    @unique
+  residentId      String?
+  resident        Resident? @relation(fields: [residentId], references: [id], onDelete: SetNull)
+  plate           String?
+  violationCode   String
+  description     String
+  location        String
+  issuedAt        DateTime  @default(now())
+  dueDate         DateTime
+  amountCents     Int
+  paidCents       Int       @default(0)
+  status          String    @default("unpaid")
+  contestStatement String?
+  contestFiledAt  DateTime?
+  contestOutcome  String?
+
+  @@index([residentId])
+  @@index([status])
+}
+
+model Program {
+  id                 String   @id @default(uuid())
+  code               String   @unique
+  name               String
+  category           String
+  season             String
+  description        String
+  location           String
+  schedule           String
+  ageMin             Int      @default(0)
+  ageMax             Int      @default(120)
+  capacity           Int      @default(20)
+  enrolled           Int      @default(0)
+  feeCents           Int      @default(0)
+  registrationOpens  DateTime
+  registrationCloses DateTime
+
+  registrations ProgramRegistration[]
+
+  @@index([category])
+}
+
+model ProgramRegistration {
+  id              String   @id @default(uuid())
+  confirmationRef String   @unique
+  programId       String
+  program         Program  @relation(fields: [programId], references: [id], onDelete: Cascade)
+  residentId      String
+  resident        Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  participantName String
+  participantAge  Int?
+  status          String   @default("registered")
+  notes           String?
+  feeCents        Int      @default(0)
+  createdAt       DateTime @default(now())
+
+  @@index([residentId])
+  @@index([programId])
+}
+
+/// Income-qualified assistance. Gated behind resident.assistance — the most
+/// sensitive dataset in the demo, and the clearest "your agent cannot see this".
+model AssistanceCase {
+  id                  String   @id @default(uuid())
+  caseNumber          String   @unique
+  residentId          String
+  resident            Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  program             String
+  status              String   @default("open")
+  householdIncomeCents Int     @default(0)
+  householdSize       Int      @default(1)
+  benefitCents        Int      @default(0)
+  caseworkerName      String?
+  caseworkerNotes     String?
+  openedAt            DateTime @default(now())
+  reviewDate          DateTime?
+
+  @@index([residentId])
+}
+
+/// Code-enforcement case file. Gated behind resident.code.enforcement.
+model CodeCase {
+  id             String    @id @default(uuid())
+  caseNumber     String    @unique
+  address        String
+  residentId     String?
+  resident       Resident? @relation(fields: [residentId], references: [id], onDelete: SetNull)
+  violationType  String
+  description    String
+  status         String    @default("open")
+  openedAt       DateTime  @default(now())
+  inspectorName  String?
+  inspectorNotes String?
+  hearingDate    DateTime?
+  fineCents      Int       @default(0)
+
+  @@index([residentId])
+  @@index([status])
+}
+
+model Payment {
+  id               String   @id @default(uuid())
+  confirmationCode String   @unique
+  residentId       String
+  resident         Resident @relation(fields: [residentId], references: [id], onDelete: Cascade)
+  kind             String
+  referenceId      String
+  referenceLabel   String
+  amountCents      Int
+  method           String   @default("simulated_ach")
+  status           String   @default("settled")
+  /// "user" when settled from the portal UI, "agent" when the assistant settled
+  /// it against a confirmation token the user approved.
+  initiatedBy      String   @default("user")
+  actorEmail       String
+  createdAt        DateTime @default(now())
+
+  @@index([residentId])
+  @@index([kind])
+}
+
+/// Two-phase payment approval. The agent may only ever create one of these; a
+/// human has to approve it before any money moves.
+model PaymentIntent {
+  id             String    @id @default(uuid())
+  token          String    @unique
+  residentId     String
+  kind           String
+  referenceId    String
+  referenceLabel String
+  amountCents    Int
+  createdBy      String
+  createdVia     String    @default("chat")
+  createdAt      DateTime  @default(now())
+  expiresAt      DateTime
+  approvedAt     DateTime?
+  approvedBy     String?
+  consumedAt     DateTime?
+  cancelledAt    DateTime?
+
+  @@index([residentId])
+}
+
+/// Every tool invocation — allowed or denied — with the scopes that decided it.
+model AuditEvent {
+  id              String   @id @default(uuid())
+  requestId       String?
+  actorEmail      String
+  actorPersona    String?
+  channel         String   @default("chat")
+  tool            String
+  resourceType    String?
+  resourceId      String?
+  allowed         Boolean
+  denyReason      String?
+  requiredScopes  String[] @default([])
+  presentedScopes String[] @default([])
+  delegationMode  String?
+  delegationJti   String?
+  delegationAud   String?
+  summary         String?
+  createdAt       DateTime @default(now())
+
+  @@index([actorEmail])
+  @@index([createdAt])
+  @@index([allowed])
+}

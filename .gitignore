@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.env
+.env.*
+!.env.example
+secrets/
+!secrets/.gitkeep
+logs/
+*.log
+.DS_Store
+apps/api/prisma/migrations/
