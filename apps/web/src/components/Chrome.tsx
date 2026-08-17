@@ -32,12 +32,48 @@ const NAV_STAFF: NavItem[] = [
   { to: "/permits", label: "Permits" },
 ];
 
+/**
+ * Which lens the portal is being viewed through.
+ *
+ * The persona is already shown next to the user's name, but during a demo the
+ * whole point is that the *same* portal behaves differently depending on the
+ * operator — so the current view gets its own colour-coded strip that is hard to
+ * miss when switching accounts mid-presentation.
+ */
+function viewBanner(me: Me): { tone: string; title: string; detail: string } {
+  const riverbendGroups = (me.groups ?? []).filter((g) => /^riverbend/i.test(g));
+  const detail = riverbendGroups.length
+    ? `Okta group: ${riverbendGroups.join(", ")}`
+    : "no Riverbend group on this session";
+
+  if (me.role === "admin") {
+    return {
+      tone: "admin",
+      title: `Administrator view — ${me.persona ?? "City Administrator"}`,
+      detail: `${detail} · resident.admin satisfies every scope check, so nothing will be refused`,
+    };
+  }
+  if (me.role === "staff") {
+    return {
+      tone: "staff",
+      title: `Staff view — ${me.persona ?? "City Staff"}`,
+      detail: `${detail} · ${me.scopes.length} scope${me.scopes.length === 1 ? "" : "s"} delegated`,
+    };
+  }
+  return {
+    tone: "resident",
+    title: "Resident view",
+    detail: `${detail} · ${me.scopes.length} self-service scope${me.scopes.length === 1 ? "" : "s"}`,
+  };
+}
+
 export function Masthead({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const nav = me.role === "resident" ? NAV_RESIDENT : [...NAV_STAFF, { to: "/programs", label: "Programs" }];
   if (me.role === "admin") {
     nav.push({ to: "/audit", label: "Agent Audit Log" });
     nav.push({ to: "/agents", label: "AI Agent Inventory" });
   }
+  const view = viewBanner(me);
 
   return (
     <header>
@@ -60,6 +96,11 @@ export function Masthead({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
         <button className="secondary small" onClick={onSignOut}>
           Sign out
         </button>
+      </div>
+      <div className={`view-banner ${view.tone}`}>
+        <span className="view-banner-dot" aria-hidden="true" />
+        <span className="view-banner-title">{view.title}</span>
+        <span className="view-banner-detail">{view.detail}</span>
       </div>
       <nav className="navbar">
         {nav.map((item) => (
