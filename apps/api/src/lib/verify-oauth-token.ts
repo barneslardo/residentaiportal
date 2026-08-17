@@ -28,6 +28,22 @@ export type VerifiedOAuthToken = {
   groups: string[];
 };
 
+/**
+ * Who this token authorizes action for.
+ *
+ * `email` cannot be minted as a custom claim on an Okta custom authorization
+ * server — the name is reserved for the ID token — so the setup script publishes
+ * `resident_email` instead. `sub` is the last resort: on a user-context token it
+ * is the Okta username, which in this org is an email address.
+ */
+function extractEmail(payload: JWTPayload): string | undefined {
+  const candidates = [payload.resident_email, payload.email, payload.preferred_username, payload.sub];
+  for (const candidate of candidates) {
+    if (typeof candidate === "string" && candidate.includes("@")) return candidate.toLowerCase();
+  }
+  return undefined;
+}
+
 function extractGroups(payload: JWTPayload): string[] {
   const raw = payload.resident_entitlement ?? payload.groups;
   if (Array.isArray(raw)) return raw.map(String);
@@ -60,9 +76,7 @@ export async function verifyOAuthAccessToken(token: string): Promise<VerifiedOAu
     scopes: extractScopes(payload),
     expiresAt: payload.exp,
     sub: String(payload.sub),
-    email:
-      (typeof payload.email === "string" && payload.email) ||
-      (typeof payload.sub === "string" && payload.sub.includes("@") ? payload.sub : undefined),
+    email: extractEmail(payload),
     groups: extractGroups(payload),
   };
 }

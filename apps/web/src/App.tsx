@@ -12,6 +12,7 @@ import CitationsPage from "./pages/CitationsPage";
 import ProgramsPage from "./pages/ProgramsPage";
 import StaffPage from "./pages/StaffPage";
 import AuditPage from "./pages/AuditPage";
+import AgentInventoryPage from "./pages/AgentInventoryPage";
 
 export default function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -72,6 +73,10 @@ export default function App() {
             <Route
               path="/audit"
               element={me.role === "admin" ? <AuditPage version={dataVersion} /> : <Navigate to="/" replace />}
+            />
+            <Route
+              path="/agents"
+              element={me.role === "admin" ? <AgentInventoryPage /> : <Navigate to="/" replace />}
             />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>

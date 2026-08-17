@@ -139,9 +139,39 @@ pnpm start                         # builds, pushes schema, runs under pm2
 | `DEV_LOGIN_ENABLED` | Local persona switching; ignored when `NODE_ENV=production` |
 | `PAYMENTS_REQUIRE_CONFIRMATION` | Leave `true` — the approval step is the demo |
 
+## Okta MCP Server catalog + agent inventory
+
+The portal registers itself in Okta's **MCP Servers** catalog
+(`/resource-servers/api/v1/mcp-servers`, beta). Okta discovers the server's name
+and scopes by fetching its RFC 9728 metadata, so registration only succeeds if
+`/.well-known/oauth-protected-resource` is reachable **and** lists
+`authorization_servers` — a missing or unreadable document is what produces the
+`No authorization servers found` error.
+
+```bash
+python3 scripts/register_mcp_server.py --list
+python3 scripts/register_mcp_server.py --url https://resident.skylarbarnes.com/mcp \
+    --name "Riverbend Resident Portal"
+python3 scripts/register_mcp_server.py --refresh <id>   # re-scrape stale scopes
+python3 scripts/register_mcp_server.py --preflight-only --url <url>
+```
+
+Notes learned the hard way: an ACTIVE server can't be deleted until it is
+deactivated (`/lifecycle/deactivate`), activate does **not** re-read metadata, and
+Cloudflare in front of these hosts 403s the default `Python-urllib` User-Agent —
+so a healthy endpoint can look unreachable to a naive checker.
+
+**AI Agent Inventory** (`/agents`, City Administrator only) answers the three
+questions the Okta Agent Gateway material opens with — where agents exist, what
+they can reach, and whether anything governs them — by joining `/oauth2/v1/clients`,
+the MCP catalog, and the org's authorization servers. It flags agents with no
+signing key, signing keys shared between an agent and a web app, MCP servers with
+no resolved authorization server, and stale metadata.
+
 ## Tooling
 
 ```bash
+node scripts/probe-agent.mjs          # is the agent's client auth trusted?
 node scripts/try-tool.mjs --list
 node scripts/try-tool.mjs --email dana.whitfield@riverbend.example \
      --groups "Riverbend Residents" get_assistance_cases      # → refusal + why

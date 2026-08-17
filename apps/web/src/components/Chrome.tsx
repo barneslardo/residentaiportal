@@ -34,7 +34,10 @@ const NAV_STAFF: NavItem[] = [
 
 export function Masthead({ me, onSignOut }: { me: Me; onSignOut: () => void }) {
   const nav = me.role === "resident" ? NAV_RESIDENT : [...NAV_STAFF, { to: "/programs", label: "Programs" }];
-  if (me.role === "admin") nav.push({ to: "/audit", label: "Agent Audit Log" });
+  if (me.role === "admin") {
+    nav.push({ to: "/audit", label: "Agent Audit Log" });
+    nav.push({ to: "/agents", label: "AI Agent Inventory" });
+  }
 
   return (
     <header>

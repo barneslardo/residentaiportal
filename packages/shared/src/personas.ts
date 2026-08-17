@@ -57,7 +57,11 @@ export const PERSONAS: PersonaDef[] = [
     id: "resident",
     label: "Resident",
     oktaGroup: "Riverbend Residents",
-    groupNames: ["riverbend residents", "residents"],
+    // "Riverbend Users" is accepted as an umbrella app-assignment group: anyone
+    // who can open the portal at all is at least a resident. Staff who are in
+    // both it and a departmental group get the union of the two scope sets,
+    // which is correct — staff have their own household too.
+    groupNames: ["riverbend residents", "riverbend users", "residents"],
     role: "resident",
     scopes: RESIDENT_SELF_SCOPES,
     blurb: "A Riverbend household — can act only on their own account.",

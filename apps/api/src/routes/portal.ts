@@ -31,6 +31,7 @@ import { contestCitation, citationQueue, listCitations } from "../services/citat
 import { listRegistrations, registerForProgram, searchPrograms } from "../services/programs.js";
 import { getAssistanceCases, getCodeCases, getOwnCodeCaseSummary } from "../services/sensitive.js";
 import { listAuditEvents } from "../lib/audit.js";
+import { buildAgentInventory } from "../services/okta-inventory.js";
 
 export const portalRouter = Router();
 
@@ -333,6 +334,19 @@ portalRouter.get(
   wrap(async (req) =>
     getAssistanceCases(await buildContext(req, "ui"), { status: req.query.status as string | undefined })
   )
+);
+
+// ── Org-wide AI agent inventory (City Administrator) ────────────────────────
+
+portalRouter.get(
+  "/agent-inventory",
+  wrap(async (req) => {
+    const ctx = await buildContext(req, "ui");
+    if (ctx.role !== "admin") {
+      throw new ScopeError([], "The agent inventory is restricted to the City Administrator.");
+    }
+    return buildAgentInventory();
+  })
 );
 
 // ── Audit (City Administrator) ──────────────────────────────────────────────
