@@ -280,8 +280,17 @@ button.small { padding: 5px 11px; font-size: 13px; }
 }
 .assistant-tabs button.active { background: #fff; color: var(--navy); border-bottom-color: var(--accent); }
 
-.thread { flex: 1; overflow-y: auto; padding: 14px 16px; }
-.msg { margin-bottom: 14px; font-size: 14px; }
+.thread {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 14px 16px;
+  position: relative; /* message offsetTop is measured against the thread */
+  scroll-padding-top: 10px;
+}
+/* Message role classes are prefixed (from-user / from-assistant / from-system) so
+   they can never collide with the .assistant panel rule above. */
+.msg { margin-bottom: 16px; font-size: 14px; min-width: 0; }
 .msg .msg-role {
   font-size: 11px;
   text-transform: uppercase;
@@ -290,12 +299,41 @@ button.small { padding: 5px 11px; font-size: 13px; }
   font-weight: 650;
   margin-bottom: 3px;
 }
-.msg.user .msg-body {
+.msg.from-user .msg-body {
   background: #eef2f6;
   padding: 9px 12px;
   border-radius: 8px;
 }
-.msg .msg-body { white-space: pre-wrap; word-wrap: break-word; }
+.msg.from-system .msg-body {
+  background: var(--amber-bg);
+  border: 1px solid #ecd9ae;
+  color: var(--amber);
+  padding: 9px 12px;
+  border-radius: 8px;
+  font-size: 13.5px;
+}
+.msg .msg-body { overflow-wrap: anywhere; }
+.msg .msg-body.plain { white-space: pre-wrap; }
+.thread .working { padding: 4px 0 8px; }
+
+/* Rendered assistant markdown */
+.md > :first-child { margin-top: 0; }
+.md > :last-child { margin-bottom: 0; }
+.md p { margin: 0 0 10px; }
+.md h2, .md h3, .md h4, .md h5 { font-size: 14px; font-weight: 650; margin: 12px 0 6px; }
+.md ul, .md ol { margin: 0 0 10px; padding-left: 20px; }
+.md li { margin: 0 0 8px; }
+.md li:last-child { margin-bottom: 0; }
+.md .md-item-detail { color: var(--slate); font-size: 13px; margin-top: 2px; }
+.md code {
+  font-family: var(--mono);
+  font-size: 12.5px;
+  background: #eef2f6;
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+.md hr { border: 0; border-top: 1px solid var(--line); margin: 10px 0; }
+.md a { color: var(--navy-soft); }
 
 .trace {
   margin-top: 8px;

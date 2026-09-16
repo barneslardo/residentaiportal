@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type AgentStatus, type ChatReply, type Me, type ToolTrace } from "../api";
+import { Markdown } from "./Markdown";
 
 type Turn = {
   role: "user" | "assistant" | "system";
@@ -35,6 +36,8 @@ export function Assistant({ me, onDataChanged }: { me: Me; onDataChanged: () => 
   const [lastDelegation, setLastDelegation] = useState<ChatReply["delegation"] | null>(null);
   const [probe, setProbe] = useState<Record<string, { ok: boolean; error?: string; scope?: string }> | null>(null);
   const threadRef = useRef<HTMLDivElement>(null);
+  const lastUserRef = useRef<HTMLDivElement>(null);
+  const spacerRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     api
@@ -50,8 +53,27 @@ export function Assistant({ me, onDataChanged }: { me: Me; onDataChanged: () => 
       .catch(() => setStatus(null));
   }, []);
 
+  // Keep the most recent question at the top of the thread, so a reply reads
+  // downward from it instead of landing the reader at the bottom of a long
+  // answer they then have to scroll back up through.
   useEffect(() => {
-    threadRef.current?.scrollTo({ top: threadRef.current.scrollHeight, behavior: "smooth" });
+    const thread = threadRef.current;
+    const anchor = lastUserRef.current;
+    if (!thread) return;
+    if (!anchor) {
+      thread.scrollTo({ top: thread.scrollHeight, behavior: "smooth" });
+      return;
+    }
+    // Pad the bottom so even a short reply can sit directly under its question
+    // rather than being stranded near the bottom of the panel.
+    const spacer = spacerRef.current;
+    if (spacer) {
+      spacer.style.height = "0px";
+      const tail = thread.scrollHeight - anchor.offsetTop;
+      spacer.style.height = `${Math.max(0, thread.clientHeight - tail - 10)}px`;
+    }
+    const top = Math.max(0, anchor.offsetTop - 10);
+    thread.scrollTo({ top, behavior: "smooth" });
   }, [turns, busy]);
 
   async function send(text: string) {
@@ -105,6 +127,7 @@ export function Assistant({ me, onDataChanged }: { me: Me; onDataChanged: () => 
   }
 
   const prompts = me.role === "resident" ? RESIDENT_PROMPTS : STAFF_PROMPTS;
+  const lastUserIndex = turns.map((t) => t.role).lastIndexOf("user");
 
   return (
     <aside className="assistant">
@@ -140,11 +163,21 @@ export function Assistant({ me, onDataChanged }: { me: Me; onDataChanged: () => 
               </div>
             )}
             {turns.map((turn, i) => (
-              <div key={i} className={`msg ${turn.role}`}>
+              <div
+                key={i}
+                className={`msg from-${turn.role}`}
+                ref={turn.role === "user" && i === lastUserIndex ? lastUserRef : undefined}
+              >
                 <div className="msg-role">
                   {turn.role === "user" ? "You" : turn.role === "assistant" ? "Assistant" : "Portal"}
                 </div>
-                <div className="msg-body">{turn.content}</div>
+                {turn.role === "assistant" ? (
+                  <div className="msg-body">
+                    <Markdown text={turn.content} />
+                  </div>
+                ) : (
+                  <div className="msg-body plain">{turn.content}</div>
+                )}
                 {turn.trace && turn.trace.length > 0 && (
                   <div className="trace">
                     {turn.trace.map((t, j) => (
@@ -161,7 +194,8 @@ export function Assistant({ me, onDataChanged }: { me: Me; onDataChanged: () => 
                 {turn.meta && <div className="tiny" style={{ marginTop: 4 }}>{turn.meta}</div>}
               </div>
             ))}
-            {busy && <div className="muted">Working…</div>}
+            {busy && <div className="muted working">Working…</div>}
+            <div ref={spacerRef} aria-hidden="true" />
           </div>
 
           {turns.length === 0 && (
