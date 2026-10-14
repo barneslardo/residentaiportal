@@ -10,3 +10,7 @@ logs/
 *.log
 .DS_Store
 apps/api/prisma/migrations/
+
+# Edit backups and TS incremental build artifacts
+*.bak.*
+*.tsbuildinfo

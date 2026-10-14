@@ -73,7 +73,7 @@ chatRouter.post("/", requireSession, async (req, res, next) => {
       throw new AppError(
         503,
         "LLM_DISABLED",
-        "No model is configured. Set GROK_API_KEY (or OPENAI_API_KEY / ANTHROPIC_API_KEY) in .env and restart."
+        "No model is configured. Set LLM_BASE_URL and LLM_API_KEY in .env and restart."
       );
     }
     if (!isAgentExchangeEnabled()) {
