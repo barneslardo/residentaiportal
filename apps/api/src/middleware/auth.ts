@@ -71,8 +71,9 @@ export function requireScopes(...scopes: OAuthScope[]) {
  *
  * Bearer tokens win over the session cookie: an MCP client presenting a
  * municipal access token is the actor, even if a browser session happens to
- * exist. Bearer scopes are still capped by the operator's persona so a
- * generously-scoped token cannot exceed what its holder is entitled to.
+ * exist. Okta's per-persona policy rules are the scope ceiling; bearer scopes
+ * are capped by the operator's persona again here, and a token whose holder
+ * resolves to no persona is refused rather than trusted as issued.
  */
 export async function buildContext(
   req: Request,
@@ -91,9 +92,14 @@ export async function buildContext(
     }
     const groups = req.oauth.groups.length ? req.oauth.groups : (req.user?.groups ?? []);
     const entitled = groups.length ? resolveScopesFromGroups(groups) : (req.user?.scopes ?? []);
-    const effective = entitled.length
-      ? capDelegatedScopes(req.oauth.scopes, entitled)
-      : req.oauth.scopes;
+    if (!entitled.length) {
+      throw new AppError(
+        403,
+        "NO_PERSONA",
+        "The access token's holder is in no Riverbend group, so the portal grants it nothing. Add the user to a Riverbend persona group in Okta."
+      );
+    }
+    const effective = capDelegatedScopes(req.oauth.scopes, entitled);
 
     const record = await prisma.user.findUnique({
       where: { email: email.toLowerCase() },

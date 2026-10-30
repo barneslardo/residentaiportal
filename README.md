@@ -27,9 +27,11 @@ to reason about.
    fresh delegated token through **Cross App Access (ID-JAG)**: the user's
    `id_token` → an ID-JAG assertion → a scoped access token on the municipal
    authorization server. The assistant holds no standing credential.
-3. **Scopes decide what the agent can even attempt** — the model is only offered
-   the tools its delegated scopes authorize. Withheld tools are listed in the
-   trust panel rather than hidden.
+3. **Okta decides the scopes, and scopes decide what the agent can even attempt**
+   — the municipal authorization server has one access-policy rule per persona
+   group, so Okta refuses to issue any scope outside the caller's persona. The
+   model is only offered the tools its delegated scopes authorize. Withheld
+   tools are listed in the trust panel rather than hidden.
 4. **Refusals explain themselves** — a denial names the missing scope, what that
    scope authorizes, and which department holds it. See
    [the scope-refusal script](#demo-script).
@@ -59,8 +61,21 @@ Nine Okta groups map to nine personas. The interesting demo move is asking the
 | Riverbend City Administrator | City Administrator | `resident.admin` |
 
 The matrix lives in [`packages/shared/src/personas.ts`](packages/shared/src/personas.ts)
-and is the single source of truth for the Okta groups, the app's scope ceiling,
-and the refusal copy.
+and is the single source of truth for the Okta groups, the refusal copy, and
+the scope ceiling. `setup_okta.py` generates the access-policy rules from it
+(rule `Persona: <label>` = that group, those scopes, `authorization_code` +
+`jwt-bearer`), so the ceiling is enforced by Okta. The app caps the delegated
+token to the same matrix again, and refuses an MCP token whose holder is in
+no Riverbend group.
+
+A person in two persona groups asks for the union of both scope sets, which no
+single rule covers — Okta refuses it (fail closed). Nobody in the org is in two
+groups today; add a combined rule if that changes.
+
+After editing the matrix: `pnpm --filter @resident/shared build`, then
+`python3 scripts/setup_okta.py --policy-only` (add `--dry-run` to preview).
+`--agent-rule everyone` puts back a single ungated `jwt-bearer` rule — a
+rollback, not a mode to demo in.
 
 ## Municipal services in the demo
 

@@ -1,5 +1,6 @@
 """Shared Okta Management API helpers for the Riverbend setup scripts."""
 import json
+import subprocess
 import sys
 import urllib.error
 import urllib.request
@@ -48,6 +49,40 @@ SCOPES = [
 ]
 
 SCOPE_NAMES = [name for name, _ in SCOPES]
+
+
+def load_personas() -> list[dict]:
+    """
+    The persona → scope matrix, read from the built @resident/shared package.
+
+    personas.ts is the single source of truth for which scopes each Okta group
+    may hold; the access-policy rules are generated from it rather than from a
+    second copy here. Requires `pnpm --filter @resident/shared build` first.
+    """
+    dist = ROOT / "packages" / "shared" / "dist" / "index.js"
+    if not dist.exists():
+        print(
+            "✗ packages/shared/dist is missing. Run:  pnpm --filter @resident/shared build",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    script = (
+        f"import({json.dumps(dist.as_uri())})"
+        ".then((m) => process.stdout.write(JSON.stringify(m.PERSONAS)))"
+    )
+    out = subprocess.run(["node", "-e", script], check=True, capture_output=True, text=True)
+    personas = json.loads(out.stdout)
+
+    group_names = {name for _, name, _ in GROUPS}
+    unknown = [p["oktaGroup"] for p in personas if p["oktaGroup"] not in group_names]
+    unknown_scopes = sorted({s for p in personas for s in p["scopes"]} - set(SCOPE_NAMES))
+    if unknown or unknown_scopes:
+        print(
+            f"✗ personas.ts and okta_common.py disagree — groups {unknown}, scopes {unknown_scopes}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    return personas
 
 
 def load_env(path: Path | None = None) -> dict[str, str]:
@@ -124,6 +159,9 @@ class Okta:
 
     def put(self, path, body):
         return self.call("PUT", path, body)
+
+    def delete(self, path):
+        return self.call("DELETE", path)
 
     def require(self, status: int, payload, what: str, ok=(200, 201)):
         if status not in ok:

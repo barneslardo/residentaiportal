@@ -7,9 +7,11 @@ Idempotent — safe to re-run. Creates or reconciles:
   1. Nine Riverbend groups (the persona matrix)
   2. A dedicated custom authorization server with 22 resident.* scopes
   3. email + resident_entitlement claims on its access tokens
-  4. An access policy with two rules:
-       · authorization_code / refresh_token for the portal web app
-       · jwt-bearer for ID-JAG hop 2 (the agent exchanging an assertion)
+  4. An access policy with one rule per persona: that persona's Okta group may
+     receive that persona's scopes and nothing else, for both authorization_code
+     and jwt-bearer (ID-JAG hop 2). Generated from packages/shared personas.ts.
+     Any other policy on the authorization server is deactivated — this server
+     belongs to the portal, and a second policy is a way around the matrix.
   5. The portal OIDC web app (private_key_jwt, groups claim, group assignment)
 
 The AI agent registration itself is not created here — see --agent-client-id.
@@ -18,6 +20,7 @@ Usage:
     python3 scripts/setup_okta.py                       # create/reconcile
     python3 scripts/setup_okta.py --agent-client-id X   # also wire the agent in
     python3 scripts/setup_okta.py --dry-run
+    python3 scripts/setup_okta.py --agent-rule everyone # rollback: ungated hop 2
 """
 import argparse
 import json
@@ -32,6 +35,7 @@ from okta_common import (
     SCOPES,
     Okta,
     load_env,
+    load_personas,
     upsert_env,
     verify_token,
 )
@@ -39,8 +43,23 @@ from okta_common import (
 AS_NAME = "Riverbend Municipal Services"
 APP_LABEL = "Riverbend Resident Portal"
 POLICY_NAME = "Riverbend portal + agent"
+RULE_PERSONA_PREFIX = "Persona: "
+# Retired 2026-10-30: both granted every resident.* scope to EVERYONE.
 RULE_PORTAL = "Portal sign-in (authorization_code)"
 RULE_AGENT = "Riverbend agent (ID-JAG hop 2)"
+JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
+# Standard OIDC scopes an MCP client may ask for alongside resident.* on sign-in.
+OIDC_SCOPES = ["openid", "profile", "email", "offline_access"]
+# Extra Okta groups that resolve to a persona in personas.ts (groupNames) but
+# are not created by this script.
+UMBRELLA_GROUPS = {"resident": ["Riverbend Users"]}
+TOKEN_ACTIONS = {
+    "token": {
+        "accessTokenLifetimeMinutes": 60,
+        "refreshTokenLifetimeMinutes": 0,
+        "refreshTokenWindowMinutes": 10080,
+    }
+}
 
 
 def ensure_groups(okta: Okta, dry: bool) -> dict[str, str]:
@@ -242,58 +261,83 @@ def ensure_policy(okta: Okta, as_id: str, client_ids: list[str], dry: bool) -> s
     return created["id"]
 
 
-def ensure_rules(okta: Okta, as_id: str, policy_id: str, dry: bool) -> None:
-    status, rules = okta.get(
-        f"/api/v1/authorizationServers/{as_id}/policies/{policy_id}/rules"
-    )
-    okta.require(status, rules, "list rules")
+def group_id_by_name(okta: Okta, name: str) -> str | None:
+    status, found = okta.get(f"/api/v1/groups?q={name.replace(' ', '%20')}&limit=50")
+    okta.require(status, found, "list groups")
+    return next((g["id"] for g in found if g.get("profile", {}).get("name") == name), None)
+
+
+def persona_rules(okta: Okta, group_ids: dict[str, str], agent_rule: str) -> list[dict]:
+    """
+    One RESOURCE_ACCESS rule per persona, in personas.ts order.
+
+    Okta takes the first rule whose people, grant type AND requested scopes all
+    match, so a request for any scope outside the caller's persona matches no
+    rule and is refused ("Policy evaluation failed") — the ceiling lives here,
+    not in the portal. The portal's capDelegatedScopes() stays as a second check.
+
+    Hop 2 (jwt-bearer) mints a token whose subject is the user named in the
+    ID-JAG, so its people condition is evaluated against that user's groups.
+    `--agent-rule everyone` restores the old ungated hop-2 rule as a rollback.
+    """
+    grants = ["authorization_code"]
+    if agent_rule == "persona":
+        grants.append(JWT_BEARER)
+
+    rules = []
+    for persona in load_personas():
+        gids = [group_ids.get(persona["id"])]
+        gids += [group_id_by_name(okta, n) for n in UMBRELLA_GROUPS.get(persona["id"], [])]
+        gids = [g for g in gids if g]
+        if not gids:
+            print(f"  ! no Okta group for persona {persona['id']} yet — skipping its rule")
+            continue
+        rules.append(
+            {
+                "type": "RESOURCE_ACCESS",
+                "name": f"{RULE_PERSONA_PREFIX}{persona['label']}",
+                "conditions": {
+                    "people": {"users": {"exclude": [], "include": []}, "groups": {"include": gids}},
+                    # `refresh_token` is NOT a valid policy-rule grant type in Okta —
+                    # refresh behaviour comes from the token lifetimes instead.
+                    "grantTypes": {"include": grants},
+                    "scopes": {"include": persona["scopes"] + OIDC_SCOPES},
+                },
+                "actions": TOKEN_ACTIONS,
+            }
+        )
+
+    if agent_rule == "everyone":
+        rules.append(
+            {
+                "type": "RESOURCE_ACCESS",
+                "name": RULE_AGENT,
+                "conditions": {
+                    "people": {"users": {"exclude": [], "include": []}, "groups": {"include": ["EVERYONE"]}},
+                    "grantTypes": {"include": [JWT_BEARER]},
+                    "scopes": {"include": SCOPE_NAMES},
+                },
+                "actions": TOKEN_ACTIONS,
+            }
+        )
+    return rules
+
+
+def ensure_rules(
+    okta: Okta, as_id: str, policy_id: str, group_ids: dict[str, str], agent_rule: str, dry: bool
+) -> None:
+    base = f"/api/v1/authorizationServers/{as_id}/policies/{policy_id}/rules"
+    if policy_id == "<new>":
+        rules = []
+    else:
+        status, rules = okta.get(base)
+        okta.require(status, rules, "list rules")
     by_name = {r.get("name"): r for r in rules}
 
-    portal_rule = {
-        "type": "RESOURCE_ACCESS",
-        "name": RULE_PORTAL,
-        "priority": 1,
-        "conditions": {
-            "people": {"users": {"exclude": [], "include": []}, "groups": {"include": ["EVERYONE"]}},
-            # `refresh_token` is NOT a valid policy-rule grant type in Okta — the
-            # allowed list is enumerated by the API and refresh behaviour is
-            # controlled by the token lifetimes below instead.
-            "grantTypes": {"include": ["authorization_code", "implicit"]},
-            "scopes": {"include": SCOPE_NAMES},
-        },
-        "actions": {
-            "token": {
-                "accessTokenLifetimeMinutes": 60,
-                "refreshTokenLifetimeMinutes": 0,
-                "refreshTokenWindowMinutes": 10080,
-            }
-        },
-    }
-
-    # Hop 2 authenticates as the *agent*, not as the user, so the people
-    # condition cannot be group-scoped — the scope ceiling is enforced by the
-    # hop-1 assertion and again by the portal's persona cap.
-    agent_rule = {
-        "type": "RESOURCE_ACCESS",
-        "name": RULE_AGENT,
-        "priority": 2,
-        "conditions": {
-            "people": {"users": {"exclude": [], "include": []}, "groups": {"include": ["EVERYONE"]}},
-            "grantTypes": {"include": ["urn:ietf:params:oauth:grant-type:jwt-bearer"]},
-            "scopes": {"include": SCOPE_NAMES},
-        },
-        "actions": {
-            "token": {
-                "accessTokenLifetimeMinutes": 60,
-                "refreshTokenLifetimeMinutes": 0,
-                "refreshTokenWindowMinutes": 10080,
-            }
-        },
-    }
-
-    for rule in (portal_rule, agent_rule):
+    wanted = persona_rules(okta, group_ids, agent_rule)
+    for priority, rule in enumerate(wanted, start=1):
+        rule["priority"] = priority
         current = by_name.get(rule["name"])
-        base = f"/api/v1/authorizationServers/{as_id}/policies/{policy_id}/rules"
         if current:
             if dry:
                 print(f"  ~ would update rule: {rule['name']}")
@@ -305,11 +349,48 @@ def ensure_rules(okta: Okta, as_id: str, policy_id: str, dry: bool) -> None:
             print(f"  ~ updated rule: {rule['name']}")
             continue
         if dry:
-            print(f"  + would create rule: {rule['name']}")
+            print(f"  + would create rule: {rule['name']} {rule['conditions']['scopes']['include']}")
             continue
         status, created = okta.post(base, rule)
         okta.require(status, created, f"create rule {rule['name']}")
         print(f"  + created rule: {rule['name']}")
+
+    # Anything else in this policy is either a retired catch-all or hand-made in
+    # the console; both widen the matrix, so they go once the persona rules exist.
+    keep = {r["name"] for r in wanted}
+    for rule in rules:
+        if rule.get("name") in keep:
+            continue
+        if dry:
+            print(f"  - would delete rule: {rule['name']}")
+            continue
+        okta.post(f"{base}/{rule['id']}/lifecycle/deactivate", None)
+        status, payload = okta.delete(f"{base}/{rule['id']}")
+        okta.require(status, payload, f"delete rule {rule['name']}", ok=(200, 204))
+        print(f"  - deleted rule: {rule['name']}")
+
+
+def deactivate_other_policies(okta: Okta, as_id: str, keep_policy_id: str, dry: bool) -> None:
+    """
+    This authorization server exists only for the portal. Any other ACTIVE
+    policy — such as the console's default "all clients, any scope" one — is a
+    path around the persona rules, so it is deactivated (not deleted: it can be
+    re-activated in the console if something turns out to need it).
+    """
+    status, policies = okta.get(f"/api/v1/authorizationServers/{as_id}/policies")
+    okta.require(status, policies, "list policies")
+    for policy in policies:
+        if policy["id"] == keep_policy_id or policy.get("status") != "ACTIVE":
+            continue
+        clients = policy.get("conditions", {}).get("clients", {}).get("include", [])
+        if dry:
+            print(f"  - would deactivate policy: {policy['name']} (clients {clients})")
+            continue
+        status, payload = okta.post(
+            f"/api/v1/authorizationServers/{as_id}/policies/{policy['id']}/lifecycle/deactivate", None
+        )
+        okta.require(status, payload, f"deactivate policy {policy['name']}", ok=(200, 204))
+        print(f"  - deactivated policy: {policy['name']} (clients {clients})")
 
 
 def ensure_oidc_app(okta: Okta, app_url: str, dry: bool, existing_client_id: str = "") -> dict:
@@ -458,10 +539,33 @@ def assign_groups_to_app(okta: Okta, app_id: str, group_ids: dict[str, str], dry
             print(f"  · assigned group: {persona_id}")
 
 
+def ensure_access_policy(
+    okta: Okta, as_id: str, client_ids: list[str], group_ids: dict[str, str], args
+) -> None:
+    print("\nAccess policy")
+    policy_id = ensure_policy(okta, as_id, client_ids, args.dry_run)
+    print("\nPolicy rules")
+    ensure_rules(okta, as_id, policy_id, group_ids, args.agent_rule, args.dry_run)
+    print("\nOther policies on this authorization server")
+    deactivate_other_policies(okta, as_id, policy_id, args.dry_run)
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--agent-client-id", help="Okta AI agent registration id used for ID-JAG")
     parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument(
+        "--policy-only",
+        action="store_true",
+        help="only reconcile the access policy + rules (skip scopes, claims, app, .env)",
+    )
+    parser.add_argument(
+        "--agent-rule",
+        choices=["persona", "everyone"],
+        default="persona",
+        help="persona (default): hop 2 is gated by the persona rules; everyone: rollback "
+        "to one ungated jwt-bearer rule",
+    )
     parser.add_argument("--env", type=Path, default=ROOT / ".env")
     args = parser.parse_args()
 
@@ -489,6 +593,15 @@ def main() -> None:
     as_id = server["id"]
     issuer = server.get("issuer") or f"{org}/oauth2/{as_id}"
 
+    agent_client_id = args.agent_client_id or env.get("AGENT_CLIENT_ID", "")
+
+    if args.policy_only:
+        client_id = env.get("OKTA_OIDC_CLIENT_ID", "").strip()
+        ensure_access_policy(okta, as_id, [client_id, agent_client_id], group_ids, args)
+        if args.dry_run:
+            print("\n(dry run — nothing was changed)")
+        return
+
     print("\nScopes")
     ensure_scopes(okta, as_id, args.dry_run)
 
@@ -503,12 +616,7 @@ def main() -> None:
         print("\nGroup assignment")
         assign_groups_to_app(okta, app["id"], group_ids, args.dry_run)
 
-    agent_client_id = args.agent_client_id or env.get("AGENT_CLIENT_ID", "")
-
-    print("\nAccess policy")
-    policy_id = ensure_policy(okta, as_id, [client_id, agent_client_id], args.dry_run)
-    print("\nPolicy rules")
-    ensure_rules(okta, as_id, policy_id, args.dry_run)
+    ensure_access_policy(okta, as_id, [client_id, agent_client_id], group_ids, args)
 
     if args.dry_run:
         print("\n(dry run — nothing was changed)")

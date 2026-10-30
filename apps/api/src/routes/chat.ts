@@ -103,10 +103,12 @@ chatRouter.post("/", requireSession, async (req, res, next) => {
         );
       }
       if (msg.includes("Policy evaluation failed")) {
+        // 403, not 5xx: this is Okta's decision, and Cloudflare swaps origin
+        // 5xx bodies for its own page, which would hide the explanation.
         throw new AppError(
-          502,
+          403,
           "DELEGATION_POLICY_DENIED",
-          "Okta denied the delegated token for your group. Check the municipal authorization server's jwt-bearer rule (scripts/setup_okta.py)."
+          "Okta denied the delegated token for your group: no persona rule on the municipal authorization server allows these scopes for you. Check your Riverbend group, or re-run scripts/setup_okta.py --policy-only."
         );
       }
       if (msg.includes("subject_token")) {
