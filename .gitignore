@@ -14,3 +14,6 @@ apps/api/prisma/migrations/
 # Edit backups and TS incremental build artifacts
 *.bak.*
 *.tsbuildinfo
+
+# Python bytecode from the setup scripts
+__pycache__/

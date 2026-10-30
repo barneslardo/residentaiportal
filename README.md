@@ -68,6 +68,10 @@ the scope ceiling. `setup_okta.py` generates the access-policy rules from it
 token to the same matrix again, and refuses an MCP token whose holder is in
 no Riverbend group.
 
+Only the exact group names in the table above (or their group IDs) count — a
+look-alike such as a plain `Residents` group from another demo matches nothing,
+and someone in no Riverbend group cannot sign in to the portal at all.
+
 A person in two persona groups asks for the union of both scope sets, which no
 single rule covers — Okta refuses it (fail closed). Nobody in the org is in two
 groups today; add a combined rule if that changes.

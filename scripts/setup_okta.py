@@ -50,9 +50,6 @@ RULE_AGENT = "Riverbend agent (ID-JAG hop 2)"
 JWT_BEARER = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 # Standard OIDC scopes an MCP client may ask for alongside resident.* on sign-in.
 OIDC_SCOPES = ["openid", "profile", "email", "offline_access"]
-# Extra Okta groups that resolve to a persona in personas.ts (groupNames) but
-# are not created by this script.
-UMBRELLA_GROUPS = {"resident": ["Riverbend Users"]}
 TOKEN_ACTIONS = {
     "token": {
         "accessTokenLifetimeMinutes": 60,
@@ -261,12 +258,6 @@ def ensure_policy(okta: Okta, as_id: str, client_ids: list[str], dry: bool) -> s
     return created["id"]
 
 
-def group_id_by_name(okta: Okta, name: str) -> str | None:
-    status, found = okta.get(f"/api/v1/groups?q={name.replace(' ', '%20')}&limit=50")
-    okta.require(status, found, "list groups")
-    return next((g["id"] for g in found if g.get("profile", {}).get("name") == name), None)
-
-
 def persona_rules(okta: Okta, group_ids: dict[str, str], agent_rule: str) -> list[dict]:
     """
     One RESOURCE_ACCESS rule per persona, in personas.ts order.
@@ -286,10 +277,8 @@ def persona_rules(okta: Okta, group_ids: dict[str, str], agent_rule: str) -> lis
 
     rules = []
     for persona in load_personas():
-        gids = [group_ids.get(persona["id"])]
-        gids += [group_id_by_name(okta, n) for n in UMBRELLA_GROUPS.get(persona["id"], [])]
-        gids = [g for g in gids if g]
-        if not gids:
+        gid = group_ids.get(persona["id"])
+        if not gid:
             print(f"  ! no Okta group for persona {persona['id']} yet — skipping its rule")
             continue
         rules.append(
@@ -297,7 +286,7 @@ def persona_rules(okta: Okta, group_ids: dict[str, str], agent_rule: str) -> lis
                 "type": "RESOURCE_ACCESS",
                 "name": f"{RULE_PERSONA_PREFIX}{persona['label']}",
                 "conditions": {
-                    "people": {"users": {"exclude": [], "include": []}, "groups": {"include": gids}},
+                    "people": {"users": {"exclude": [], "include": []}, "groups": {"include": [gid]}},
                     # `refresh_token` is NOT a valid policy-rule grant type in Okta —
                     # refresh behaviour comes from the token lifetimes instead.
                     "grantTypes": {"include": grants},

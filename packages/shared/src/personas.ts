@@ -8,9 +8,11 @@ import { OAuthScopes, type OAuthScope } from "./scopes.js";
  *   2. the scopes the app will accept on a delegated token (see capDelegatedScopes),
  *   3. the persona label and explanation text the assistant uses when it refuses.
  *
- * `groupNames` are matched case-insensitively against the `groups` claim, and
- * `groupId` (filled in after setup_okta.py runs, or via OKTA_GROUP_* env vars)
- * is matched exactly so the demo still works if the claim carries group IDs.
+ * A group matches a persona only by its exact Okta display name (`oktaGroup`,
+ * case-insensitive) or its group ID (OKTA_GROUP_IDS, written by setup_okta.py),
+ * so a look-alike group from another app — a plain "Residents" — grants nothing.
+ * The Okta access policy has one rule per `oktaGroup`, generated from this
+ * table — re-run `scripts/setup_okta.py --policy-only` after editing it.
  */
 export type PersonaId =
   | "resident"
@@ -26,10 +28,8 @@ export type PersonaId =
 export type PersonaDef = {
   id: PersonaId;
   label: string;
-  /** Okta group display name created by scripts/setup_okta.py. */
+  /** Okta group display name created by scripts/setup_okta.py — the only name that matches. */
   oktaGroup: string;
-  /** Additional lowercase tokens accepted from the `groups` claim. */
-  groupNames: string[];
   /** Portal role — drives which UI surfaces render. */
   role: "resident" | "staff" | "admin";
   scopes: OAuthScope[];
@@ -57,11 +57,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "resident",
     label: "Resident",
     oktaGroup: "Riverbend Residents",
-    // "Riverbend Users" is accepted as an umbrella app-assignment group: anyone
-    // who can open the portal at all is at least a resident. Staff who are in
-    // both it and a departmental group get the union of the two scope sets,
-    // which is correct — staff have their own household too.
-    groupNames: ["riverbend residents", "riverbend users", "residents"],
     role: "resident",
     scopes: RESIDENT_SELF_SCOPES,
     blurb: "A Riverbend household — can act only on their own account.",
@@ -70,7 +65,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "clerk",
     label: "City Clerk",
     oktaGroup: "Riverbend City Clerk",
-    groupNames: ["riverbend city clerk", "city clerk"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.RECORDS_WRITE, OAuthScopes.PROGRAMS_REGISTER],
     blurb: "Maintains the resident roll and registers households for city programs.",
@@ -79,7 +73,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "utility_billing",
     label: "Utility Billing",
     oktaGroup: "Riverbend Utility Billing",
-    groupNames: ["riverbend utility billing", "utility billing"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.BILLING_READ, OAuthScopes.BILLING_ADJUST],
     blurb: "Reads any utility account and can issue credits or waive late fees.",
@@ -88,7 +81,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "public_works",
     label: "Public Works Dispatch",
     oktaGroup: "Riverbend Public Works",
-    groupNames: ["riverbend public works", "public works"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.REQUESTS_MANAGE],
     blurb: "Triages and closes 311 service requests; no billing or case-file access.",
@@ -97,7 +89,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "building_permits",
     label: "Building & Permits",
     oktaGroup: "Riverbend Building Permits",
-    groupNames: ["riverbend building permits", "building permits", "building and permits"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.PERMITS_REVIEW],
     blurb: "Reviews permit applications and schedules inspections.",
@@ -106,7 +97,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "code_enforcement",
     label: "Code Enforcement",
     oktaGroup: "Riverbend Code Enforcement",
-    groupNames: ["riverbend code enforcement", "code enforcement"],
     role: "staff",
     scopes: [
       OAuthScopes.RECORDS_READ,
@@ -119,7 +109,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "treasurer",
     label: "Treasurer",
     oktaGroup: "Riverbend Treasurer",
-    groupNames: ["riverbend treasurer", "treasurer"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.TAX_READ, OAuthScopes.BILLING_READ],
     blurb: "Reads property-tax assessments and bills across every parcel.",
@@ -128,7 +117,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "social_services",
     label: "Social Services",
     oktaGroup: "Riverbend Social Services",
-    groupNames: ["riverbend social services", "social services"],
     role: "staff",
     scopes: [OAuthScopes.RECORDS_READ, OAuthScopes.ASSISTANCE],
     blurb:
@@ -138,7 +126,6 @@ export const PERSONAS: PersonaDef[] = [
     id: "administrator",
     label: "City Administrator",
     oktaGroup: "Riverbend City Administrator",
-    groupNames: ["riverbend city administrator", "city administrator"],
     role: "admin",
     scopes: [OAuthScopes.ADMIN],
     blurb: "Full access, including the agent audit log.",
@@ -168,7 +155,7 @@ function matchesPersona(persona: PersonaDef, token: string): boolean {
   const t = token.trim().toLowerCase();
   if (!t) return false;
   if (groupIdIndex[t] === persona.id) return true;
-  return persona.groupNames.some((name) => t === name || t.includes(name));
+  return t === persona.oktaGroup.toLowerCase();
 }
 
 /** Every persona implied by the Okta groups on the session. */
