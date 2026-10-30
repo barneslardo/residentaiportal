@@ -154,7 +154,7 @@ pnpm start                         # builds, pushes schema, runs under pm2
 | `OKTA_AUDIENCE` / `MCP_RESOURCE_URL` | Must match each other **and** the AS audience |
 | `OKTA_OIDC_CLIENT_ID` | Portal web app (`private_key_jwt`) |
 | `AGENT_CLIENT_ID` | AI agent registration — **must differ** from the OIDC client id |
-| `LLM_BASE_URL`, `LLM_API_KEY` | OpenAI-compatible LLM gateway (e.g. LiteLLM). Models: `gemma4` (default) or `grok-4.3` |
+| `LLM_BASE_URL`, `LLM_API_KEY` | OpenAI-compatible LLM gateway (e.g. LiteLLM). Models: `grok-4.3` (default) or `claude-sonnet-5-5` |
 | `DEV_LOGIN_ENABLED` | Local persona switching; ignored when `NODE_ENV=production` |
 | `PAYMENTS_REQUIRE_CONFIRMATION` | Leave `true` — the approval step is the demo |
 

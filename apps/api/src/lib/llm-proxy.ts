@@ -105,10 +105,9 @@ async function runOpenAiCompatibleLoop(opts: {
 type ModelEntry = { id: string; label: string; provider: "litellm" };
 
 // Every model goes through the OpenAI-compatible LLM gateway (LiteLLM), which
-// tracks usage per demo site. gemma4 is self-hosted; grok-4.3 is xAI;
-// claude-sonnet-5-5 is Anthropic.
+// tracks usage per demo site. grok-4.3 (xAI) is the default and listed first,
+// because the assistant panel preselects the first entry; claude-sonnet-5-5 is Anthropic.
 const MODEL_CATALOG: ModelEntry[] = [
-  { id: "gemma4", label: "Gemma 4 (self-hosted)", provider: "litellm" },
   { id: "grok-4.3", label: "Grok 4.3 (xAI)", provider: "litellm" },
   { id: "claude-sonnet-5-5", label: "Claude Sonnet 5.5 (Anthropic)", provider: "litellm" },
 ];

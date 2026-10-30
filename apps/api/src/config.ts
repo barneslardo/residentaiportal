@@ -126,8 +126,8 @@ export const config = {
     /** OpenAI-compatible LLM gateway (LiteLLM) with this site's key. */
     baseUrl: optional("LLM_BASE_URL"),
     apiKey: optional("LLM_API_KEY"),
-    /** gemma4 (self-hosted), grok-4.3 or claude-sonnet-5-5. */
-    defaultModel: optional("CHAT_DEFAULT_MODEL", "gemma4"),
+    /** grok-4.3 (default) or claude-sonnet-5-5. */
+    defaultModel: optional("CHAT_DEFAULT_MODEL", "grok-4.3"),
     /**
      * Pin the assistant to exactly one model. Enforced server-side: the model
      * list collapses to this entry and any model on the request is ignored.
